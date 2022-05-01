@@ -418,8 +418,11 @@ void* fs_init(struct fuse_conn_info *conn)
 	// read the superblock
 	//CS492: your code below
 	struct fs_super sb;
-
-
+	int r = disk->ops->read(disk, 0, 1, &sb);
+	if (r < 0) {
+		exit(1);
+	}
+	
 
 	root_inode = 42;
 
@@ -428,23 +431,30 @@ void* fs_init(struct fuse_conn_info *conn)
 	//CS492: your code below
 	inode_map_base = 1; // This is correct.
 	inode_map = NULL;
-
-
+	r = disk->ops->read(disk, inode_map_base, sb.inode_map_sz, inode_map); 
+	if (r < 0) {
+		exit(1);
+	}
 
 	// read block map
 	//CS492: your code below
 	block_map_base = 42;
 	block_map = NULL;
-
-
+	r = disk->ops->read(disk, block_map_base, sb.block_map_sz, block_map);
+	if (r < 0) {
+		exit(1);
+	}
 
 	/* The inode data is in the next set of blocks */
 	//CS492: your code below
 	inode_base = 42;
 	n_inodes = 42;
 	inodes = NULL;
-
-
+	// is this right ?TODO
+	r = disk->ops->read(disk, inode_base, sb.inode_region_sz, inodes);
+	if (r < 0) {
+		exit(1);
+	}
 
 	// number of blocks on device
 	n_blocks = sb.num_blocks;
@@ -627,8 +637,7 @@ static int set_attributes_and_update(struct fs_dirent *de, char *name, mode_t mo
  * 	-ENOSPC   - results in >32 entries in directory
 */
 static int fs_mknod(const char *path, mode_t mode, dev_t dev)
-{
-	//get current and parent inodes
+{	//get current and parent inodes
 	mode |= S_IFREG;
 	if (!S_ISREG(mode) || strcmp(path, "/") == 0) return -EINVAL;
 	char *_path = strdup(path);
@@ -675,7 +684,31 @@ static int fs_mknod(const char *path, mode_t mode, dev_t dev)
 static int fs_mkdir(const char *path, mode_t mode)
 {
 	//CS492: your code here
-	return -1;
+	mode |= S_IFDIR;
+	if (!S_ISDIR(mode) || strcmp(path, "/") == 0) return -EINVAL;
+	char *_path = strdup(path);
+	char name[FS_FILENAME_SIZE];
+	int inode_idx = translate(_path);
+	int parent_inode_idx = translate_1(_path, name);
+	if (inode_idx >= 0) return -EEXIST;
+	if (parent_inode_idx < 0) return parent_inode_idx;
+	//read parent info
+	struct fs_inode *parent_inode = &inodes[parent_inode_idx];
+	if (!S_ISDIR(parent_inode->mode)) return -ENOTDIR;
+
+	struct fs_dirent entries[DIRENTS_PER_BLK];
+	memset(entries, 0, DIRENTS_PER_BLK * sizeof(struct fs_dirent));
+	if (disk->ops->read(disk, parent_inode->direct[0], 1, entries) < 0)
+		exit(1);
+	//assign inode and directory and update
+	int res = set_attributes_and_update(entries, name, mode, true);
+	if (res < 0) return res;
+
+	//write entries buffer into disk
+	if (disk->ops->write(disk, parent_inode->direct[0], 1, entries) < 0)
+		exit(1);
+	return SUCCESS;
+
 }
 
 static void fs_truncate_dir(uint32_t *de) {
@@ -850,8 +883,16 @@ static int fs_rmdir(const char *path)
 
 	//remove entry from parent dir
 	//CS492: your code below
-
-
+	memset(entries, 0, DIRENTS_PER_BLK * sizeof(struct fs_dirent));
+	if (disk->ops->read(disk, parent_inode->direct[0], 1, entries) < 0)
+		exit(1);
+	for (int i = 0; i < DIRENTS_PER_BLK; i++) {
+		if (entries[i].valid && strcmp(entries[i].name, name) == 0) {
+			memset(&entries[i], 0, sizeof(struct fs_dirent));
+		}
+	}
+	if (disk->ops->write(disk, parent_inode->direct[0], 1, entries) < 0)
+		exit(1);
 
 	//return blk and clear inode
 	return_blk(inode->direct[0]);
