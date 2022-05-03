@@ -450,7 +450,6 @@ void* fs_init(struct fuse_conn_info *conn)
 	inode_base = 42;
 	n_inodes = 42;
 	inodes = NULL;
-	// is this right ?TODO
 	r = disk->ops->read(disk, inode_base, sb.inode_region_sz, inodes);
 	if (r < 0) {
 		exit(1);
@@ -1007,6 +1006,11 @@ static int fs_chmod(const char *path, mode_t mode)
 int fs_utime(const char *path, struct utimbuf *ut)
 {
 	//CS492: your code here
+	char* _path = strdup(path);
+	int inode_idx = translate(_path);
+	if (inode_idx < 0) return inode_idx;
+	struct fs_inode *inode = &inodes[inode_idx];
+	inode->mtime = ut->modtime;
 	return -1;
 }
 
@@ -1041,7 +1045,7 @@ static size_t fs_read_dir(size_t inode_idx, char *buf, size_t len, size_t offset
 	size_t len_to_read = len;
 	while (blk_num < N_DIRECT && len_to_read > 0) {
 		size_t cur_len_to_read = len_to_read > BLOCK_SIZE ? (size_t) BLOCK_SIZE - blk_offset : len_to_read;
-		size_t temp = blk_offset + cur_len_to_read;
+		size_t temp = cur_len_to_read;
 
 		if (!inode->direct[blk_num]) {
 			return len - len_to_read;
