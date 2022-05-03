@@ -105,7 +105,7 @@ static int image_write(struct blkdev * dev, int first_blk, int nblks, void *buf)
 	assert(first_blk >= 0 && first_blk+nblks <= im->nblks);
 
 	if (first_blk==0) {
-		printk(KERN_WARNING "Warning: writing to superblock (block 0)\n");
+		printf("Warning: writing to superblock (block 0)\n");
 	}
 
 	int result = pwrite(im->fd, buf, nblks*BLOCK_SIZE, first_blk*BLOCK_SIZE);

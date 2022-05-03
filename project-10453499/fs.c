@@ -1141,6 +1141,14 @@ static int fs_read(const char *path, char *buf, size_t len, off_t offset,
 		    struct fuse_file_info *fi)
 {
 	//CS492: your code here
+	if(offset >= len) return 0;
+	if(offset+len > len) return len-offset;
+	char* _path = strdup(path);
+	int inode_idx = translate(_path);
+	if (inode_idx < 0) return -ENOENT;
+	struct fs_inode *inode = &inode[inode_idx];//Gets inode from path
+	if(S_ISDIR(inode->mode)) return -EISDIR;
+	//Unfinished, Am i doing this right?
 	return -1;
 }
 
