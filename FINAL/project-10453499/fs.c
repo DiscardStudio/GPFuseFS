@@ -423,14 +423,13 @@ void* fs_init(struct fuse_conn_info *conn)
 		exit(1);
 	}
 	
-
-	root_inode = 42;
+	root_inode = sb.root_inode;
 
 	/* The inode map and block map are directly after the superblock */
 	// read inode map
 	//CS492: your code below
 	inode_map_base = 1; // This is correct.
-	inode_map = NULL;
+	inode_map = malloc(sb.inode_map_sz * FS_BLOCK_SIZE);
 	r = disk->ops->read(disk, inode_map_base, sb.inode_map_sz, inode_map); 
 	if (r < 0) {
 		exit(1);
@@ -438,8 +437,8 @@ void* fs_init(struct fuse_conn_info *conn)
 
 	// read block map
 	//CS492: your code below
-	block_map_base = 42;
-	block_map = NULL;
+	block_map_base = sb.inode_map_sz+1;
+	block_map = malloc(sb.block_map_sz * FS_BLOCK_SIZE);
 	r = disk->ops->read(disk, block_map_base, sb.block_map_sz, block_map);
 	if (r < 0) {
 		exit(1);
@@ -447,9 +446,9 @@ void* fs_init(struct fuse_conn_info *conn)
 
 	/* The inode data is in the next set of blocks */
 	//CS492: your code below
-	inode_base = 42;
-	n_inodes = 42;
-	inodes = NULL;
+	inode_base = block_map_base + sb.block_map_sz;
+	n_inodes = sb.inode_region_sz * INODES_PER_BLK;
+	inodes = malloc(sb.inode_region_sz * FS_BLOCK_SIZE);
 	r = disk->ops->read(disk, inode_base, sb.inode_region_sz, inodes);
 	if (r < 0) {
 		exit(1);
@@ -863,14 +862,15 @@ static int fs_rmdir(const char *path)
 
 	//get inodes and check
 	//CS492: your code below
-	char *_path = NULL;
-	char name[1];
-	int inode_idx = 42;
-	int parent_inode_idx = 42;
-	struct fs_inode *inode = NULL;
-	struct fs_inode *parent_inode = NULL;
-
-
+	char *_path = strdup(path);
+	char name[FS_FILENAME_SIZE];
+	int inode_idx = translate(_path);
+	int parent_inode_idx = translate_1(_path, name);
+	struct fs_inode *inode = &inodes[inode_idx];
+	struct fs_inode *parent_inode = &inodes[parent_inode_idx];
+	if (inode_idx < 0 || parent_inode_idx < 0) return -ENOENT;
+	if (!S_ISDIR(inode->mode)) return -ENOTDIR;
+	if (!S_ISDIR(parent_inode->mode)) return -ENOTDIR;
 
 	//check if dir if empty
 	struct fs_dirent entries[DIRENTS_PER_BLK];
@@ -1012,7 +1012,7 @@ int fs_utime(const char *path, struct utimbuf *ut)
 	struct fs_inode *inode = &inodes[inode_idx];
 	inode->mtime = ut->modtime;
 	update_inode(inode_idx);
-	return -1;
+	return 0;
 }
 
 /**

@@ -163,6 +163,7 @@ static void image_close(struct blkdev *dev)
 		return;
 	}
 	// TODO am I freeing correctly?
+	dev->private = NULL;
 	close(im->fd);
 	free(im);
 	free(dev);
