@@ -1011,6 +1011,7 @@ int fs_utime(const char *path, struct utimbuf *ut)
 	if (inode_idx < 0) return inode_idx;
 	struct fs_inode *inode = &inodes[inode_idx];
 	inode->mtime = ut->modtime;
+	update_inode(inode_idx);
 	return -1;
 }
 
@@ -1036,6 +1037,11 @@ static int fs_open(const char *path, struct fuse_file_info *fi)
 
 static void fs_read_blk(int blk_num, char *buf, size_t len, size_t offset) {
 	//CS492: your code here
+	char entries[BLOCK_SIZE];
+	memset(entries, 0, BLOCK_SIZE);
+	if (disk->ops->read(disk, blk_num, 1, entries) < 0) exit(1);
+	memcpy(entries + offset, buf, len);
+
 }
 
 static size_t fs_read_dir(size_t inode_idx, char *buf, size_t len, size_t offset) {
@@ -1140,6 +1146,7 @@ static size_t fs_read_indir2(size_t blk, char *buf, size_t len, size_t offset) {
 static int fs_read(const char *path, char *buf, size_t len, off_t offset,
 		    struct fuse_file_info *fi)
 {
+	/*
 	//CS492: your code here
 	if(offset >= len) return 0;
 	if(offset+len > len) return len-offset;
@@ -1149,7 +1156,48 @@ static int fs_read(const char *path, char *buf, size_t len, off_t offset,
 	struct fs_inode *inode = &inode[inode_idx];//Gets inode from path
 	if(S_ISDIR(inode->mode)) return -EISDIR;
 	//Unfinished, Am i doing this right?
-	return -1;
+	return -1;	
+	*/
+	char *_path = strdup(path);
+	int inode_idx = translate(_path);
+	if (inode_idx < 0) return inode_idx;
+	struct fs_inode *inode = &inodes[inode_idx];
+	if (S_ISDIR(inode->mode)) return -EISDIR;
+	if (offset >= inode->size) return 0;
+	if (offset+len > inode->size) {
+		len = (size_t)inode->size - offset;
+	}
+	//len need to read
+	size_t len_to_read = len;
+
+	//read direct blocks
+	if (len_to_read > 0 && offset < DIR_SIZE) {
+		//len finished read
+		size_t temp = fs_read_dir(inode_idx, buf, len_to_read, (size_t) offset);
+		len_to_read -= temp;
+		offset += temp;
+		buf += temp;
+	}
+
+	//read indirect 1 blocks
+	if (len_to_read > 0 && offset < DIR_SIZE + INDIR1_SIZE) {
+		size_t temp = fs_read_indir1(inode->indir_1, buf, len_to_read, (size_t) offset - DIR_SIZE);
+		len_to_read -= temp;
+		offset += temp;
+		buf += temp;
+	}
+
+	//read indirect 2 blocks
+	if (len_to_read > 0 && offset < DIR_SIZE + INDIR1_SIZE + INDIR2_SIZE) {
+		//len finshed read
+		size_t temp = fs_read_indir2(inode->indir_2, buf, len_to_read, (size_t) offset - DIR_SIZE - INDIR1_SIZE);
+		len_to_read -= temp;
+		offset += temp;
+		buf += temp;
+	}
+
+	return (int) (len - len_to_read);
+
 }
 
 static void fs_write_blk(int blk_num, const char *buf, size_t len, size_t offset) {
